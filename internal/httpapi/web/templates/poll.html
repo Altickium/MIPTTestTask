@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Голосование</title>
+  <link rel="stylesheet" href="/static/app.css?v=2">
+</head>
+<body class="public-page">
+  <main class="page-shell narrow">
+    <header class="brand"><span class="brand-mark">P</span><span>Poll Service</span></header>
+    <section class="card poll-card" aria-labelledby="question">
+      <div id="status" class="status" role="status">Загружаем опрос…</div>
+      <form id="vote-form" class="is-hidden" hidden>
+        <p class="eyebrow">Опрос</p>
+        <h1 id="question"></h1>
+        <p id="ends-at" class="muted"></p>
+        <fieldset id="options" class="options">
+          <legend class="sr-only">Варианты ответа</legend>
+        </fieldset>
+        <p id="choice-help" class="muted"></p>
+        <button id="submit-vote" class="primary" type="submit">Отправить голос</button>
+      </form>
+    </section>
+    <p class="privacy-note">Голос привязывается к подписанной cookie этого браузера. Личные данные в результатах не сохраняются.</p>
+  </main>
+  <noscript>Для голосования требуется JavaScript.</noscript>
+  <script src="/static/poll.js?v=2" defer></script>
+</body>
+</html>

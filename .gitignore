@@ -1,0 +1,4 @@
+.env
+*.out
+coverage.*
+docs/ai/load-reports/*.json

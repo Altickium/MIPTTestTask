@@ -1,0 +1,397 @@
+openapi: 3.1.0
+info:
+  title: Poll Service API
+  version: 1.0.0
+  description: JSON API for creating, publishing, voting in, observing, and closing audience polls.
+servers:
+  - url: /
+    description: Current API origin or the local Swagger reverse proxy
+  - url: http://localhost:8080
+    description: Local Docker Compose
+tags:
+  - name: Client
+    description: Public viewer operations
+  - name: Admin
+    description: Operations protected by the admin bearer token
+  - name: Operations
+    description: Health and service metadata
+paths:
+  /api/v1/polls/{slug}:
+    get:
+      tags: [Client]
+      summary: Get an active poll by slug
+      description: Returns 404 for drafts and outside the poll time window. Issues a signed browser identity cookie when absent or invalid.
+      operationId: getPublicPoll
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      responses:
+        '200':
+          description: Active public poll
+          headers:
+            Set-Cookie:
+              description: Signed `poll_device` identity cookie when a new identity is required.
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicPoll' }
+        '404': { $ref: '#/components/responses/PollNotFound' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /api/v1/polls/{id}/votes:
+    post:
+      tags: [Client]
+      summary: Record an immutable browser vote
+      operationId: recordVote
+      parameters:
+        - $ref: '#/components/parameters/PollID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VoteRequest' }
+      responses:
+        '201':
+          description: First vote recorded
+          headers:
+            Set-Cookie:
+              description: Signed browser identity cookie when newly created.
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoteResponse' }
+              examples:
+                recorded: { value: { status: recorded } }
+        '200':
+          description: The same browser was already counted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoteResponse' }
+              examples:
+                duplicate: { value: { status: already_recorded } }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '404': { $ref: '#/components/responses/PollNotFound' }
+        '409': { $ref: '#/components/responses/PollNotActive' }
+        '415': { $ref: '#/components/responses/InvalidContentType' }
+        '422': { $ref: '#/components/responses/InvalidSelection' }
+        '429':
+          description: Network rate limit exceeded
+          headers:
+            Retry-After: { schema: { type: integer, minimum: 1 } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /api/v1/admin/polls:
+    get:
+      tags: [Admin]
+      summary: List recently created polls
+      description: Returns persisted poll definitions in reverse creation order so the admin UI can reopen them after a page reload.
+      operationId: listRecentPolls
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of poll definitions to return.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        '200':
+          description: Recent polls, newest first
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PollList' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+    post:
+      tags: [Admin]
+      summary: Create a draft poll
+      operationId: createPoll
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreatePollRequest' }
+      responses:
+        '201':
+          description: Draft poll and generated option IDs
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminPoll' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '415': { $ref: '#/components/responses/InvalidContentType' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /api/v1/admin/polls/{id}/publish:
+    post:
+      tags: [Admin]
+      summary: Publish a draft poll
+      description: Idempotently returns an already active poll; closed polls cannot be republished.
+      operationId: publishPoll
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/PollID'
+      responses:
+        '200':
+          description: Published poll
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminPoll' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/PollNotFound' }
+        '409': { $ref: '#/components/responses/InvalidTransition' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /api/v1/admin/polls/{id}/close:
+    post:
+      tags: [Admin]
+      summary: Close a poll and persist its final result
+      operationId: closePoll
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/PollID'
+      responses:
+        '200':
+          description: Immutable final result; repeated close calls return the same result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PollResult' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/PollNotFound' }
+        '409': { $ref: '#/components/responses/InvalidTransition' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /api/v1/admin/polls/{id}/results:
+    get:
+      tags: [Admin]
+      summary: Get live or final anonymized results
+      operationId: getPollResults
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/PollID'
+      responses:
+        '200':
+          description: Redis live totals or the PostgreSQL final snapshot
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PollResult' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/PollNotFound' }
+        '409': { $ref: '#/components/responses/InvalidTransition' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /api/v1/admin/polls/{id}/qr.svg:
+    get:
+      tags: [Admin]
+      summary: Download a QR code for the canonical public poll URL
+      operationId: getPollQRCode
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/PollID'
+      responses:
+        '200':
+          description: Locally generated SVG QR code
+          content:
+            image/svg+xml:
+              schema: { type: string }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/PollNotFound' }
+        '409': { $ref: '#/components/responses/InvalidTransition' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /health/live:
+    get:
+      tags: [Operations]
+      summary: Process liveness
+      operationId: getLiveness
+      responses:
+        '200':
+          description: Process is alive
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+  /health/ready:
+    get:
+      tags: [Operations]
+      summary: PostgreSQL and Redis readiness
+      operationId: getReadiness
+      responses:
+        '200':
+          description: Dependencies are ready
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque admin token
+  parameters:
+    PollID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Slug:
+      name: slug
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+  schemas:
+    PollType:
+      type: string
+      enum: [single_choice, multiple_choice]
+    PollStatus:
+      type: string
+      enum: [draft, active, closed]
+    Option:
+      type: object
+      additionalProperties: false
+      required: [id, text]
+      properties:
+        id: { type: string, format: uuid }
+        text: { type: string, minLength: 1, maxLength: 200 }
+    PublicPoll:
+      type: object
+      required: [id, slug, question, type, max_choices, ends_at, options]
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string }
+        question: { type: string, minLength: 1, maxLength: 500 }
+        type: { $ref: '#/components/schemas/PollType' }
+        max_choices: { type: integer, minimum: 1, maximum: 20 }
+        ends_at: { type: string, format: date-time }
+        options:
+          type: array
+          minItems: 2
+          maxItems: 20
+          items: { $ref: '#/components/schemas/Option' }
+    AdminPoll:
+      allOf:
+        - $ref: '#/components/schemas/PublicPoll'
+        - type: object
+          required: [status, starts_at, created_at, updated_at]
+          properties:
+            status: { $ref: '#/components/schemas/PollStatus' }
+            starts_at: { type: string, format: date-time }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+            published_at: { type: string, format: date-time }
+            closed_at: { type: string, format: date-time }
+    PollList:
+      type: object
+      additionalProperties: false
+      required: [polls]
+      properties:
+        polls:
+          type: array
+          description: Persisted poll definitions in reverse creation order.
+          items: { $ref: '#/components/schemas/AdminPoll' }
+    CreatePollRequest:
+      type: object
+      additionalProperties: false
+      required: [question, type, max_choices, starts_at, ends_at, options]
+      properties:
+        question: { type: string, minLength: 1, maxLength: 500 }
+        type: { $ref: '#/components/schemas/PollType' }
+        max_choices: { type: integer, minimum: 1, maximum: 20 }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        options:
+          type: array
+          minItems: 2
+          maxItems: 20
+          items:
+            type: object
+            additionalProperties: false
+            required: [text]
+            properties:
+              text: { type: string, minLength: 1, maxLength: 200 }
+    VoteRequest:
+      type: object
+      additionalProperties: false
+      required: [option_ids]
+      properties:
+        option_ids:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string, format: uuid }
+    VoteResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [recorded, already_recorded]
+    PollResult:
+      type: object
+      additionalProperties: false
+      required: [poll_id, status, source, as_of, participants_count, options]
+      properties:
+        poll_id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/PollStatus' }
+        source: { type: string, enum: [redis_live, postgres_snapshot, postgres_final] }
+        as_of: { type: string, format: date-time }
+        participants_count: { type: integer, format: int64, minimum: 0 }
+        finalization_pending:
+          type: boolean
+          description: True only when a close attempt must be safely retried to persist the final result.
+        options:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, text, count, participant_percent]
+            properties:
+              id: { type: string, format: uuid }
+              text: { type: string }
+              count: { type: integer, format: int64, minimum: 0 }
+              participant_percent: { type: number, minimum: 0 }
+    Health:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string, enum: [ok, ready] }
+    ErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message, request_id]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            request_id: { type: string }
+  responses:
+    InvalidRequest:
+      description: Malformed JSON, UUID, or domain input
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    InvalidContentType:
+      description: Content-Type must be application/json
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    Unauthorized:
+      description: Missing or invalid admin bearer token
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    PollNotFound:
+      description: Poll not found or intentionally hidden
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    PollNotActive:
+      description: Poll is not active
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    InvalidTransition:
+      description: Poll lifecycle transition is not allowed
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    InvalidSelection:
+      description: Selection violates the poll rules
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    Unavailable:
+      description: A required dependency is unavailable
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }

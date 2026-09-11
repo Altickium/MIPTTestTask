@@ -1,0 +1,4 @@
+.git
+.env
+docs/ai/load-reports
+*.out

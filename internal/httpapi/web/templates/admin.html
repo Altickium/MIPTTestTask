@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Управление опросами</title>
+  <link rel="stylesheet" href="/static/app.css?v=3">
+</head>
+<body data-public-base-url="{{.PublicBaseURL}}">
+  <main class="page-shell">
+    <header class="brand"><span class="brand-mark">P</span><span>Poll Service</span><a class="header-link" href="/openapi.yaml">OpenAPI</a></header>
+    <section class="hero">
+      <div><p class="eyebrow">Панель администратора</p><h1>Создайте и запустите опрос</h1><p class="muted">Токен хранится только в памяти текущей вкладки.</p></div>
+      <form id="token-form" class="token-form"><label for="admin-token">Admin token</label><div class="inline"><input id="admin-token" type="password" autocomplete="off" required><button type="submit">Применить</button></div></form>
+    </section>
+    <div id="admin-status" class="status" role="status">Введите admin token для начала работы.</div>
+    <div class="admin-grid">
+      <section class="card">
+        <h2>Новый опрос</h2>
+        <form id="create-form">
+          <label for="question-input">Вопрос</label><textarea id="question-input" maxlength="500" required>Какой вариант вы выбираете?</textarea>
+          <div class="form-row"><div><label for="poll-type">Тип</label><select id="poll-type"><option value="single_choice">Один вариант</option><option value="multiple_choice">Несколько вариантов</option></select></div><div><label for="max-choices">Максимум ответов</label><input id="max-choices" type="number" min="1" max="20" value="1" required></div></div>
+          <div class="form-row"><div><label for="starts-at">Начало</label><input id="starts-at" type="datetime-local" required></div><div><label for="ends-at">Окончание</label><input id="ends-at" type="datetime-local" required></div></div>
+          <label for="options-input">Варианты — по одному на строку</label><textarea id="options-input" required>A
+B</textarea>
+          <button class="primary" type="submit">Создать черновик</button>
+        </form>
+      </section>
+      <section class="card current-card">
+        <div class="section-heading"><h2>Текущий опрос</h2><span id="poll-badge" class="badge">Не выбран</span></div>
+        <div id="poll-summary" class="empty-state">После создания здесь появятся управление, ссылка и результаты.</div>
+        <div id="poll-actions" class="actions is-hidden" hidden><button id="publish-button" class="primary" type="button">Опубликовать</button><button id="refresh-button" type="button">Обновить результаты</button><button id="close-button" class="danger" type="button">Закрыть</button></div>
+        <div id="share-panel" class="share-panel is-hidden" hidden><div><p class="eyebrow">Ссылка для зрителей</p><a id="public-link" target="_blank" rel="noopener"></a></div><div class="qr-wrap"><img id="qr-preview" alt="QR-код публичного опроса"><a id="qr-download" download>Скачать SVG</a></div></div>
+        <div id="results" class="results" aria-live="polite"></div>
+      </section>
+      <section class="card history-card">
+        <div class="section-heading"><div><h2>Сохранённые опросы</h2><p class="muted history-hint">Последние опросы из PostgreSQL доступны и после перезагрузки страницы.</p></div><button id="reload-polls" type="button">Обновить список</button></div>
+        <div id="poll-list" class="poll-list"><div class="empty-state">Введите admin token, чтобы загрузить опросы.</div></div>
+      </section>
+    </div>
+  </main>
+  <script src="/static/admin.js?v=3" defer></script>
+</body>
+</html>
