@@ -40,7 +40,7 @@ docker compose down
 ### Через HTML-панель
 
 1. Откройте [http://localhost:8080/admin](http://localhost:8080/admin).
-2. Введите локальный token `local-admin-token-change-me` либо значение собственного `ADMIN_TOKEN`. Токен хранится только в памяти открытой вкладки и очищается при её закрытии.
+2. Введите локальный token `ADMIN_TOKEN` из вашего `.env` окружения. Токен хранится только в памяти открытой вкладки и очищается при её закрытии.
 3. После проверки токена блок **Сохранённые опросы** загрузит до 100 последних опросов из PostgreSQL. Нажмите **Открыть** у нужного опроса, чтобы снова управлять черновиком, наблюдать активный опрос или посмотреть финальные результаты закрытого — в том числе после k6-теста и перезагрузки страницы. Кнопка **Обновить список** перечитывает данные.
 4. Для нового опроса заполните вопрос, тип, время начала/окончания и варианты — по одному на строку. Для `single_choice` максимум всегда равен одному; для `multiple_choice` задайте допустимый максимум вариантов.
 5. Нажмите **Создать черновик**. До публикации зрители не видят опрос.
@@ -56,14 +56,14 @@ Admin-панель — минимальный demo UI, а не полноцен�
 
 ```bash
 curl -sS 'http://localhost:8080/api/v1/admin/polls?limit=100' \
-  -H 'Authorization: Bearer local-admin-token-change-me'
+  -H 'Authorization: Bearer ADMIN_TOKEN_HERE'
 ```
 
 Создание черновика:
 
 ```bash
 curl -sS -X POST http://localhost:8080/api/v1/admin/polls \
-  -H 'Authorization: Bearer local-admin-token-change-me' \
+  -H 'Authorization: Bearer ADMIN_TOKEN_HERE' \
   -H 'Content-Type: application/json' \
   -d '{
     "question":"Какой вариант вы выбираете?",
@@ -79,20 +79,20 @@ curl -sS -X POST http://localhost:8080/api/v1/admin/polls \
 
 ```bash
 curl -sS -X POST http://localhost:8080/api/v1/admin/polls/{id}/publish \
-  -H 'Authorization: Bearer local-admin-token-change-me'
+  -H 'Authorization: Bearer ADMIN_TOKEN_HERE'
 
 curl -sS http://localhost:8080/api/v1/admin/polls/{id}/results \
-  -H 'Authorization: Bearer local-admin-token-change-me'
+  -H 'Authorization: Bearer ADMIN_TOKEN_HERE'
 
 curl -sS -X POST http://localhost:8080/api/v1/admin/polls/{id}/close \
-  -H 'Authorization: Bearer local-admin-token-change-me'
+  -H 'Authorization: Bearer ADMIN_TOKEN_HERE'
 ```
 
 QR-код опубликованного опроса:
 
 ```bash
 curl -fsS http://localhost:8080/api/v1/admin/polls/{id}/qr.svg \
-  -H 'Authorization: Bearer local-admin-token-change-me' \
+  -H 'Authorization: Bearer ADMIN_TOKEN_HERE' \
   -o poll.svg
 ```
 
@@ -103,7 +103,7 @@ curl -fsS http://localhost:8080/api/v1/admin/polls/{id}/qr.svg \
 3. Выберите вариант или варианты и нажмите **Отправить голос**.
 4. Первый валидный голос покажет «Ваш голос принят». Повтор из того же браузера покажет «Ваш голос уже был учтён» и не изменит счётчики.
 
-Сервер устанавливает подписанную `HttpOnly`, `SameSite=Lax` cookie `poll_device`. Сырой device ID, cookie и IP не попадают в PostgreSQL или логи. Удаление cookie, другой браузер или автоматизированный клиент обходят базовую дедупликацию — это известное ограничение анонимного голосования.
+Сервер устанавливает подписанную `HttpOnly`, `SameSite=Lax` cookie `poll_device`. Сырой device ID, cookie и IP не попадают в PostgreSQL или логи.
 
 Прямой API-вызов пользователя с сохранением cookie:
 
@@ -121,10 +121,6 @@ Public `GET /api/v1/polls/{slug}` возвращает `404` для чернов
 Полная OpenAPI 3.1 спецификация admin/client и health endpoints находится в [api/openapi.yaml](api/openapi.yaml) и раздаётся работающим API по адресу [http://localhost:8080/openapi.yaml](http://localhost:8080/openapi.yaml).
 
 Для удобного чтения и интерактивных запросов Compose запускает [Swagger UI на http://localhost:8081](http://localhost:8081). Он читает тот же `api/openapi.yaml`, поэтому отдельной копии контракта нет. Swagger-контейнер проксирует `/api/*` и `/health/*` в Go API по внутренней Compose-сети: кнопка **Try it out** работает без включения CORS в приложении.
-
-Для admin endpoints нажмите **Authorize** и введите значение `ADMIN_TOKEN`; Swagger сам сформирует заголовок `Authorization: Bearer ...`. Client endpoints не требуют авторизации. При вызове public poll endpoint браузер сохранит подписанную device cookie, поэтому повторный vote request из той же Swagger-вкладки вернёт `already_recorded`.
-
-Исходный YAML также можно импортировать в Swagger Editor, Postman, Insomnia или использовать для генерации клиента. Admin operations описаны с HTTP bearer security scheme; публичное голосование документирует cookie, коды `recorded`/`already_recorded` и error responses.
 
 ## Monitoring и график RPS
 
@@ -153,7 +149,7 @@ sum(rate(http_requests_total{route="/api/v1/polls/{id}/votes",method="POST"}[1m]
 sum(rate(votes_recorded_total[1m]))
 ```
 
-Для короткого burst можно заменить `[1m]` на `[15s]`: граф станет отзывчивее, но менее плавным. Route label нормализован и не содержит реальный poll ID. Если одновременно активен один опрос, граф соответствует его RPS; для нескольких опросов он показывает сумму. Не добавляйте неограниченный `poll_id` label в Prometheus — per-poll аналитику следует строить по структурированным логам либо по ограниченному allowlist активных series с обязательной очисткой lifecycle.
+Для короткого burst можно заменить `[1m]` на `[15s]`: граф станет отзывчивее, но менее плавным. Route label нормализован и не содержит реальный poll ID. Если одновременно активен один опрос, граф соответствует его RPS; для нескольких опросов он показывает сумму. Не добавляйте неограниченный `poll_id` label в Prometheus.
 
 Полезные дополнительные запросы:
 
@@ -163,8 +159,6 @@ rate(votes_duplicate_total[1m])
 rate(votes_rejected_total[1m])
 rate(snapshot_error_total[5m])
 ```
-
-В production `/metrics`, Prometheus UI и TSDB должны находиться во внутренней защищённой сети.
 
 ## Проверка
 
@@ -178,6 +172,10 @@ k6 run tests/load/vote.js
 ```
 
 Перед запуском k6 пожалуйста убедить, что у вас стоит переменная окружения `ADMIN_TOKEN` такая, которая в Docker-файле.
+
+```bash
+ADMIN_TOKEN=EXAMPLE_TOKEN k6 run ...
+```
 
 Integration tests по умолчанию используют PostgreSQL `localhost:5432` и Redis `localhost:6380`; адреса меняются через `INTEGRATION_DATABASE_URL` и `INTEGRATION_REDIS_ADDR`. Redis-тест отправляет 200 конкурентных запросов одного device hash и проверяет ровно один инкремент участника и варианта.
 
